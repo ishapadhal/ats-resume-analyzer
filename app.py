@@ -1,3 +1,4 @@
+import re
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -29,7 +30,7 @@ client = OpenAI(
 def get_llm_response(prompt, resume_text, job_desc):
 
     final_prompt = f"""
-You are an ATS Resume Analyzer.
+You are a professional ATS system.
 
 Job Description:
 {job_desc}
@@ -40,16 +41,22 @@ Resume:
 {prompt}
 """
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "user", "content": final_prompt}
-        ],
-        temperature=0.3
-    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "user", "content": final_prompt}
+            ],
+            temperature=0.3
+        )
 
-    return response.choices[0].message.content
+        print("RAW GROQ RESPONSE:", response)
 
+        return response.choices[0].message.content
+
+    except Exception as e:
+        print("GROQ ERROR:", e)
+        return None
     
 
 # ---------- STREAMLIT UI ----------
@@ -80,15 +87,41 @@ if submit1:
         resume_text = input_pdf_setup(uploaded_file)
         response = get_llm_response(input_prompt3, resume_text, input_text)
         st.subheader("Response:")
-        st.write(response)
+
+        match = re.search(r'ATS Score:\s*(\d+)%', response)
+        if match:
+            score = int(match.group(1))
+            st.progress(score)
+            st.success(f"ATS Score: {score}%")
+        else:
+            st.warning("No ATS Score found in response.")
     else:
         st.warning("Please upload a resume.")
 
-elif submit3:
+if submit3:
     if uploaded_file:
         resume_text = input_pdf_setup(uploaded_file)
-        response = get_llm_response(input_prompt1, resume_text, input_text)
-        st.subheader("Response:")
-        st.write(response)
+
+        try:
+            response = get_llm_response(input_prompt3, resume_text, input_text)
+
+            if response:
+                st.subheader("Response:")
+                st.write(response)
+
+                match = re.search(r'ATS Score:\s*(\d+)%', response)
+
+                if match:
+                    score = int(match.group(1))
+                    st.progress(score)
+                    st.success(f"ATS Score: {score}%")
+                else:
+                    st.warning("Could not extract ATS score from response.")
+            else:
+                st.error("No response received from model.")
+
+        except Exception as e:
+            st.error(f"API Error: {str(e)}")
+
     else:
         st.warning("Please upload a resume.")
