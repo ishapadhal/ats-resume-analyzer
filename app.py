@@ -1,36 +1,40 @@
 import re
-from dotenv import load_dotenv
-load_dotenv()
-
-import streamlit as st
 import os
+from dotenv import load_dotenv
+import streamlit as st
 from openai import OpenAI
 import PyPDF2
 
+# Load environment variables
+load_dotenv()
+
+# ---------- API KEY ----------
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-
-# ---------- PDF TEXT EXTRACTION ----------
-
-def input_pdf_setup(uploaded_file):
-    reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
-
-
-# ---------- HUGGING FACE FUNCTION ----------
-
+# ---------- GROQ CLIENT ----------
 client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
 )
 
+# ---------- PDF TEXT EXTRACTION ----------
+def input_pdf_setup(uploaded_file):
+    reader = PyPDF2.PdfReader(uploaded_file)
+    text = ""
+
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text
+
+    return text
+
+
+# ---------- LLM FUNCTION ----------
 def get_llm_response(prompt, resume_text, job_desc):
 
     final_prompt = f"""
-You are a professional ATS system.
+You are an experienced ATS (Applicant Tracking System) expert.
 
 Job Description:
 {job_desc}
@@ -38,6 +42,7 @@ Job Description:
 Resume:
 {resume_text}
 
+Instructions:
 {prompt}
 """
 
@@ -50,78 +55,118 @@ Resume:
             temperature=0.3
         )
 
-        print("RAW GROQ RESPONSE:", response)
-
         return response.choices[0].message.content
 
     except Exception as e:
-        print("GROQ ERROR:", e)
+        st.error(f"Groq API Error: {e}")
         return None
-    
+
 
 # ---------- STREAMLIT UI ----------
-
 st.set_page_config(page_title="ATS Resume Expert")
-st.header("ATS Tracking System")
+st.header("📄 ATS Resume Tracking System")
 
-input_text = st.text_area("Job Description:")
-uploaded_file = st.file_uploader("Upload your Resume (PDF)", type=["pdf"])
+input_text = st.text_area("Paste Job Description")
+
+uploaded_file = st.file_uploader(
+    "Upload Your Resume (PDF)",
+    type=["pdf"]
+)
 
 submit1 = st.button("Tell Me About Resume")
 submit3 = st.button("Percentage Match")
 
+
+# ---------- PROMPTS ----------
 input_prompt1 = """
 Review the resume against the job description.
-Highlight strengths and weaknesses.
+
+Provide:
+1. Strengths
+2. Weaknesses
+3. Suggestions for improvement
 """
 
 input_prompt3 = """
-Give:
-1. Match Percentage
-2. Missing Keywords
-3. Final Thoughts
+Analyze the resume against the job description.
+
+Return EXACTLY in this format:
+
+ATS Score: XX%
+
+Missing Keywords:
+- keyword1
+- keyword2
+- keyword3
+
+Final Thoughts:
+Short summary explaining overall fit.
 """
 
-if submit1:
-    if uploaded_file:
-        resume_text = input_pdf_setup(uploaded_file)
-        response = get_llm_response(input_prompt3, resume_text, input_text)
-        st.subheader("Response:")
 
-        match = re.search(r'ATS Score:\s*(\d+)%', response)
-        if match:
-            score = int(match.group(1))
-            st.progress(score)
-            st.success(f"ATS Score: {score}%")
+# ---------- TELL ME ABOUT RESUME ----------
+if submit1:
+
+    if uploaded_file is not None:
+
+        resume_text = input_pdf_setup(uploaded_file)
+
+        response = get_llm_response(
+            input_prompt1,
+            resume_text,
+            input_text
+        )
+
+        if response:
+            st.subheader("Response")
+            st.write(response)
+
         else:
-            st.warning("No ATS Score found in response.")
+            st.error("No response received from model.")
+
     else:
         st.warning("Please upload a resume.")
 
+
+# ---------- PERCENTAGE MATCH ----------
 if submit3:
-    if uploaded_file:
+
+    if uploaded_file is not None:
+
         resume_text = input_pdf_setup(uploaded_file)
 
-        try:
-            response = get_llm_response(input_prompt3, resume_text, input_text)
+        response = get_llm_response(
+            input_prompt3,
+            resume_text,
+            input_text
+        )
 
-            if response:
-                st.subheader("Response:")
-                st.write(response)
+        if response:
 
-                match = re.search(r'ATS Score:\s*(\d+)%', response)
+            st.subheader("ATS Analysis")
+            st.write(response)
 
-                if match:
-                    score = int(match.group(1))
-                    st.progress(score)
-                    st.success(f"ATS Score: {score}%")
-                else:
-                    st.warning("Could not extract ATS score from response.")
+            # Extract score
+            match = re.search(
+                r'(?:ATS Score|Match Percentage)\s*:?\s*(\d+)%',
+                response,
+                re.IGNORECASE
+            )
+
+            if match:
+                score = int(match.group(1))
+
+                score = max(0, min(score, 100))
+
+                st.subheader("ATS Score")
+                st.progress(score)
+                st.success(f"ATS Score: {score}%")
+
             else:
-                st.error("No response received from model.")
+                st.warning("Could not extract ATS score.")
 
-        except Exception as e:
-            st.error(f"API Error: {str(e)}")
+        else:
+            st.error("No response received from model.")
 
     else:
         st.warning("Please upload a resume.")
