@@ -17,6 +17,22 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
+st.write("API KEY FOUND:", bool(GROQ_API_KEY))
+st.write("API KEY PREFIX:", GROQ_API_KEY[:8] if GROQ_API_KEY else "NONE")
+
+try:
+    models = client.models.list()
+
+    st.write("GROQ CONNECTION: SUCCESS")
+
+    model_names = [model.id for model in models.data]
+
+    st.write("AVAILABLE MODELS:")
+    st.write(model_names)
+
+except Exception as e:
+    st.error(f"MODEL LIST ERROR: {repr(e)}")
+
 # ---------- PDF TEXT EXTRACTION ----------
 def input_pdf_setup(uploaded_file):
     reader = PyPDF2.PdfReader(uploaded_file)
@@ -48,7 +64,7 @@ Instructions:
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "user", "content": final_prompt}
             ],
